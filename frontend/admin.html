@@ -1,0 +1,55 @@
+!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin — Click to Pay</title>
+  <style>body{font-family:Arial;padding:12px;background:#07172a;color:#e6eef6} .btn{padding:6px 10px;border-radius:6px;background:#06b6d4;color:#001;border:none;cursor:pointer} .tx{padding:8px;background:rgba(255,255,255,0.02);border-radius:8px;margin-bottom:8px}</style>
+</head>
+<body>
+  <h2>Admin Panel</h2>
+  <div>
+    <label>Admin Key: <input id="admKey" style="width:300px"></label>
+    <button class="btn" id="loadBtn">Load Withdraws</button>
+  </div>
+  <div id="list" style="margin-top:12px"></div>
+
+<script>
+const API_BASE = 'https://YOUR_BACKEND_DOMAIN_OR_IP/api';
+
+document.getElementById('loadBtn').addEventListener('click', async ()=>{
+  const key = document.getElementById('admKey').value.trim();
+  if(!key) return alert('Enter admin key');
+  try{
+    const res = await fetch(API_BASE + '/withdraw/admin/list', { headers: { 'x-admin-key': key }});
+    const data = await res.json();
+    if(!res.ok) return alert('Error: ' + (data.error || JSON.stringify(data)));
+    const el = document.getElementById('list'); el.innerHTML = '';
+    data.list.forEach(tx => {
+      const div = document.createElement('div'); div.className='tx';
+      div.innerHTML = `<div><strong>${tx.userId}</strong> • ${tx.amount} • ${new Date(tx.createdAt).toLocaleString()} • status: ${tx.status}</div>
+        <div style="margin-top:8px">
+          <button class="btn" onclick="process('${key}','${tx._id}','processed')">Mark Processed</button>
+          <button class="btn" onclick="process('${key}','${tx._id}','rejected')">Reject</button>
+          <pre style="margin-top:6px">${JSON.stringify(tx.meta,null,2)}</pre>
+        </div>`;
+      el.appendChild(div);
+    });
+  }catch(e){ console.error(e); alert('Load error'); }
+});
+
+async function process(key, txId, action){
+  try{
+    const res = await fetch(API_BASE + '/withdraw/admin/process', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'x-admin-key': key },
+      body: JSON.stringify({ txId, action })
+    });
+    const data = await res.json();
+    if(!res.ok) return alert('Error: ' + (data.error || JSON.stringify(data)));
+    alert('Done');
+    document.getElementById('loadBtn').click();
+  }catch(e){ console.error(e); alert('Process error'); }
+}
+</script>
+</body>
+</html>
