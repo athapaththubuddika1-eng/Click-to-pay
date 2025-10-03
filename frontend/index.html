@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="si">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Click to Pay — Earn</title>
+  <style>
+    body{font-family:Inter,system-ui,Arial;background:#07172a;color:#e6eef6;padding:18px}
+    .card{max-width:980px;margin:auto;background:rgba(255,255,255,0.02);padding:18px;border-radius:12px}
+    .logo{font-weight:800;background:linear-gradient(90deg,#06b6d4,#8b5cf6);padding:6px 12px;border-radius:8px;display:inline-block}
+    .btn{background:linear-gradient(90deg,#06b6d4,#8b5cf6);padding:8px 12px;border-radius:10px;border:none;color:#001;cursor:pointer;font-weight:700}
+    input,select{padding:8px;border-radius:8px;border:none;background:rgba(255,255,255,0.03);color:inherit}
+    .muted{color:#94a3b8}
+    .tx{background:rgba(255,255,255,0.01);padding:8px;border-radius:8px;margin-bottom:6px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><div class="logo">Click to Pay</div><div class="muted">Mobile-ready earnings site</div></div>
+      <div id="userBox"><button class="btn" id="btnRegister">Create Account</button></div>
+    </div>
+
+    <hr>
+
+    <div style="display:flex;gap:16px;flex-direction:column">
+      <div>
+        <div class="muted">Balance</div>
+        <h2 id="balance">0</h2>
+      </div>
+
+      <div>
+        <div class="muted">Click ad (opens new tab). Server credits <strong>5 coins</strong> per valid click.</div>
+        <div style="margin-top:8px">
+          <button class="btn" id="clickAdBtn">CLICK (Open Ad)</button>
+          <button class="btn" id="openAdBtn" style="background:transparent;border:1px solid rgba(255,255,255,0.04);color:inherit">Open ad only</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="muted">Captcha (type) — server credits <strong>10 coins</strong>.</div>
+        <div style="margin-top:8px"><button class="btn" id="captchaBtn">Do Captcha</button></div>
+      </div>
+
+      <div>
+        <div class="muted">Referral link (referral gives referrer <strong>10 coins</strong>).</div>
+        <input id="refLink" readonly style="width:100%;margin-top:6px">
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="btn" id="copyRef">Copy</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="muted">Withdraw (FaucetPay only). Minimum: <strong>5000 coins</strong></div>
+        <select id="wMethod"><option value="faucetpay">FaucetPay email</option></select>
+        <input id="wDest" placeholder="FaucetPay email" style="width:100%;margin-top:8px">
+        <button class="btn" id="withdrawBtn" style="margin-top:8px">Request Withdraw</button>
+      </div>
+
+      <div>
+        <div class="muted">Withdraw history</div>
+        <div id="history" style="margin-top:8px"></div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+const API_BASE = 'https://YOUR_BACKEND_DOMAIN_OR_IP/api'; // change
+const AD_URL = 'https://www.revenuecpmgate.com/dnm2jrcaj?key=c73c264e4447410ce55eb32960238eaa';
+
+function getToken(){ return localStorage.getItem('ctp_token'); }
+function saveToken(t){ localStorage.setItem('ctp_token', t); }
+function authHeaders(){ const token = getToken(); return token ? { 'Authorization': 'Bearer ' + token } : {}; }
+
+async function api(path, opts = {}){
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {}, authHeaders());
+  const res = await fetch(API_BASE + path, { ...opts, headers });
+  const data = await res.json();
+  if(!res.ok) throw data;
+  return data;
+}
+
+async function refreshUser(){
+  try{
+    const token = getToken();
+    if(!token) return;
+    const res = await api('/auth/me', { method:'GET' });
+    document.getElementById('balance').textContent = res.user.balance;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    document.getElementById('refLink').value = window.location.origin + window.location.pathname + '?ref=' + payload.userId;
+    document.getElementById('userBox').innerHTML = '<div class="muted">Hi ' + payload.userId + '</div>';
+    await loadHistory();
+  }catch(e){ console.warn(e); }
+}
+refreshUser();
+
+document.getElementById('btnRegister').addEventListener('click', async ()=>{
+  const uid = prompt('Choose referral id (no spaces):', 'user_'+Math.floor(Math.random()*9000));
+  if(!uid) return;
+  const urlParams = new URLSearchParams(window.location.search);
+  const ref = urlParams.get('ref');
+  try{
+    const res = await fetch(API_BASE + '/auth/register', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ userId: uid, referredBy: ref }) });
+    const data = await res.json();
+    if(!res.ok) return alert('Error: ' + (data.error || JSON.stringify(data)));
+    saveToken(data.token);
+    alert('Registered.');
+    await refreshUser();
+  }catch(err){ console.error(err); alert('Register failed'); }
+});
+
+document.getElementById('clickAdBtn').addEventListener('click', async ()=>{
+  window.open(AD_URL, '_blank');
+  try{
+    const res = await api('/clicks/open-ad', { method:'POST', body: JSON.stringify({ adUrl: AD_URL }) });
+    alert('You earned ' + res.added + ' coins. New balance: ' + res.balance);
+    document.getElementById('balance').textContent = res.balance;
+    await loadHistory();
+  }catch(err){ alert('Click error: ' + (err.error || JSON.stringify(err))); }
+});
+
+document.getElementById('openAdBtn').addEventListener('click', ()=> window.open(AD_URL, '_blank'));
+
+document.getElementById('captchaBtn').addEventListener('click', async ()=>{
+  const code = Math.random().toString(36).slice(2,7).toUpperCase();
+  const ans = prompt('Type the code: ' + code);
+  if(!ans || ans.toUpperCase().trim() !== code) return alert('Wrong code');
+  try{
+    const res = await api('/clicks/captcha', { method:'POST', body: JSON.stringify({}) });
+    alert('Added ' + res.added);
+    document.getElementById('balance').textContent = res.balance;
+    await loadHistory();
+  }catch(e){ alert('Error: ' + (e.error || JSON.stringify(e))); }
+});
+
+document.getElementById('copyRef').addEventListener('click', ()=>{
+  const el = document.getElementById('refLink'); el.select(); el.setSelectionRange(0,99999);
+  document.execCommand('copy'); alert('Copied');
+});
+
+document.getElementById('withdrawBtn').addEventListener('click', async ()=>{
+  const dest = document.getElementById('wDest').value.trim();
+  if(!dest) return alert('Enter FaucetPay email');
+  try{
+    const res = await api('/withdraw/request', { method:'POST', body: JSON.stringify({ method: 'faucetpay', dest }) });
+    alert('Withdraw requested: ' + res.txId);
+    await refreshUser();
+  }catch(e){ alert('Withdraw error: ' + (e.error || JSON.stringify(e))); }
+});
+
+async function loadHistory(){
+  try{
+    const res = await api('/withdraw/history', { method:'GET' });
+    const el = document.getElementById('history'); el.innerHTML = '';
+    res.list.forEach(r => {
+      const d = document.createElement('div'); d.className='tx';
+      d.innerHTML = `<div><strong>${r.type}</strong> ${r.amount} • ${new Date(r.createdAt).toLocaleString()} • status: ${r.status}</div><div class="muted">${r.meta && JSON.stringify(r.meta)}</div>`;
+      el.appendChild(d);
+    });
+  }catch(e){ console.warn('history', e); }
+}
+</script>
+</body>
+</html>
