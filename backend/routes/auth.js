@@ -57,3 +57,5 @@ router.get('/me', async (req,res)=>{
     res.json({ user:{ userId:u.userId, balance:u.balance } });
   }catch(e){ res.status(401).json({ error:'invalid' }); }
 });
+
+module.exports = router;
